@@ -36,7 +36,7 @@ plt.legend(title="Game Date")
 plt.grid(True, alpha=0.3)
 x_min, x_max = plt.xlim()                 # get axis limits
 plt.xticks(np.arange(0, x_max + 20, 20))
-# plt.show()
+plt.show()
 
 
 catapult_data = pd.read_csv("../clean_data/catapult_data_wstatus.csv")

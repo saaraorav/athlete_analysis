@@ -5,6 +5,8 @@ import numpy as np
 
 
 raw_cmj_data = pd.read_csv("../raw_data/MASTER_all_CMJmetrics.csv")
+# raw_cmj_data = raw_cmj_data.sort_values('recordedUTC', ascending=False)
+# print(raw_cmj_data['recordedUTC'].tail(5))
 # ensure it's a datetime
 raw_cmj_data['recordedUTC'] = pd.to_datetime(raw_cmj_data['recordedUTC'], utc=True, errors='coerce')
 
@@ -54,6 +56,9 @@ else:
 final_cols = ['date', 'athleteId', 'name', 'sex', 'dateOfBirth',
               'valueName', 'typeName', 'testType', 'testId', 'peak_power_bm']
 wide = wide.reindex(columns=final_cols)
+
+wide['date'] = pd.to_datetime(wide['date'], errors='coerce')
+result = wide.sort_values('date').reset_index(drop=True)
 
 output_path = "../clean_data/wide_cmj.csv"
 wide.to_csv(output_path, index=False)

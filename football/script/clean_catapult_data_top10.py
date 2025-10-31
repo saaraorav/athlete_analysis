@@ -3,6 +3,7 @@ import numpy as np
 
 # Example: your DataFrame
 raw_catapult_data = pd.read_csv("../raw_data/tblCatapultFOOTBALLStatsByActivity.csv")
+top10_per_year = pd.read_csv("../clean_data/top_contributors.csv")
 
 
 # List of columns to keep
@@ -109,37 +110,58 @@ print(f"Saved merged file to: {output_path}")
 LOAD_THRESH = 100  # cutoff for being an active game contributor
 
 # 1) Row-level game status: only games count; practices are False
-grid_week_df['game_status'] = (grid_week_df['activity'].eq('game')) & (grid_week_df['total_player_load'] > LOAD_THRESH)
+# grid_week_df['game_status'] = (grid_week_df['activity'].eq('game')) & (grid_week_df['total_player_load'] > LOAD_THRESH)
 
-grid_week_df['weekly_status'] = (
-    grid_week_df.groupby(['athlete_name', 'week_of_school_uid'])['game_status']
-      .transform('any')
-).fillna(False)
+# grid_week_df['weekly_status'] = (
+#     grid_week_df.groupby(['athlete_name', 'week_of_school_uid'])['game_status']
+#       .transform('any')
+# ).fillna(False)
 
-# print(grid_week_df.head(200)) 
-output_path = "../clean_data/catapult_data_wstatus.csv"
-grid_week_df.to_csv(output_path, index=False)
-print(f"Saved merged file to: {output_path}")
+# # print(grid_week_df.head(200)) 
+# output_path = "../clean_data/catapult_data_wstatus.csv"
+# grid_week_df.to_csv(output_path, index=False)
+# print(f"Saved merged file to: {output_path}")
 
 
-# remove practice rows with low athlete participation
-practice_counts = (
-    grid_week_df.loc[grid_week_df['activity'] == 'practice']
-      .groupby('date')['catapult_athlete_id'].nunique()
-      .rename('num_athletes')
-      .reset_index()
+# # remove practice rows with low athlete participation
+# practice_counts = (
+#     grid_week_df.loc[grid_week_df['activity'] == 'practice']
+#       .groupby('date')['catapult_athlete_id'].nunique()
+#       .rename('num_athletes')
+#       .reset_index()
+# )
+
+# # Filter out low-participation days
+# valid_practices = practice_counts.loc[practice_counts['num_athletes'] >= 35, 'date']
+# # keep only games and valid practices
+# df_clean = grid_week_df[
+#     (grid_week_df['activity'] == 'game') |
+#     ((grid_week_df['activity'] == 'practice') & (grid_week_df['date'].isin(valid_practices)))
+# ]
+
+grid_week_df = grid_week_df.copy()
+grid_week_df["date"] = pd.to_datetime(grid_week_df["date"], errors="coerce")
+grid_week_df["year"] = grid_week_df["date"].dt.year
+
+# Identify athlete/name columns
+grid_name_col = "athlete_name" if "athlete_name" in grid_week_df.columns else "name"
+top_name_col  = "athlete_name" if "athlete_name" in top10_per_year.columns else "name"
+
+# --- Build set of (year, athlete) for top-10 cohort ---
+top10_pairs = (
+    top10_per_year[["year", top_name_col]]
+    .dropna()
+    .drop_duplicates()
+    .apply(tuple, axis=1)
 )
+top10_pairs = set(top10_pairs.tolist())
 
-# Filter out low-participation days
-valid_practices = practice_counts.loc[practice_counts['num_athletes'] >= 35, 'date']
-# keep only games and valid practices
-df_clean = grid_week_df[
-    (grid_week_df['activity'] == 'game') |
-    ((grid_week_df['activity'] == 'practice') & (grid_week_df['date'].isin(valid_practices)))
-]
+grid_week_df["weekly_status"] = pd.Series(
+    list(zip(grid_week_df["year"], grid_week_df[grid_name_col]))
+).isin(top10_pairs)
 
 # print(df_clean.head(200)) 
 
-output_path = "../clean_data/catapult_data_practice_game_clean.csv"
-df_clean.to_csv(output_path, index=False)
+output_path = "../clean_data/catapult_data_practice_game_clean_top10.csv"
+grid_week_df.to_csv(output_path, index=False)
 print(f"Saved merged file to: {output_path}")

@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 # import numpy as np
 
-catapult_data = pd.read_csv("../clean_data/catapult_data_practice_game_clean.csv")
-cmj_data = pd.read_csv("../clean_data/cmj_wstatus.csv")
+catapult_data = pd.read_csv("../clean_data/catapult_data_practice_game_clean_top10.csv")
+cmj_data = pd.read_csv("../clean_data/cmj_wstatus_top10.csv")
 
 weeks_cmj = cmj_data.loc[cmj_data['week_of_school_uid'].notna()].copy()
 
@@ -53,7 +53,7 @@ result = (
 result['avg_player_load'] = result['avg_player_load'].round(1)
 
 # print(result.head())
-output_path = "../clean_data/avgload.csv"
+output_path = "../clean_data/avgload_top10.csv"
 result.to_csv(output_path, index=False)
 print(f"Saved merged file to: {output_path}")
 
@@ -86,7 +86,7 @@ cmj_result = (
 )
 
 # print(result.head())
-output_path = "../clean_data/avgpeakpower.csv"
+output_path = "../clean_data/avgpeakpower_top10.csv"
 cmj_result.to_csv(output_path, index=False)
 print(f"Saved merged file to: {output_path}")
 
@@ -103,15 +103,6 @@ result = result.sort_values('date')
 
 # Extract year from UID (e.g. "2024-W7" -> 2024)
 result['school_year'] = result['week_of_school_uid'].str.extract(r'(\d{4})').astype(int)
-
-# Build table for labels per week
-# week_labels = (
-#     result.groupby(['school_year', 'week_of_school_uid', 'week_start'], as_index=False)
-#           .agg(
-#               week_of_school=('week_of_school', 'first'),
-#               active_player=('active_player', 'first')
-#           )
-# )
 
 df_weeks['week_start'] = pd.to_datetime(df_weeks['week_start'], errors='coerce')
 
@@ -141,6 +132,9 @@ week_labels = (
 # (Optional) make active_player integer
 week_labels['active_player'] = week_labels['active_player'].astype(int)
 
+result = result[result['week_of_school'].str.match(r'^W\d+', na=False)]
+week_labels = week_labels[week_labels['week_of_school'].str.match(r'^W\d+', na=False)]
+
 # Color palette
 palette = {'practice': 'red', 'game': 'blue'}
 
@@ -156,9 +150,19 @@ if len(years) == 1:
 # --- Ensure cmj_result has real datetimes ---
 cmj_result['date'] = pd.to_datetime(cmj_result['date'], errors='coerce')
 cmj_result = cmj_result.dropna(subset=['date'])  # drop rows that failed to parse
+cmj_result = cmj_result[cmj_result['week_of_school'].astype(str).str.match(r'^W\d+', na=False)]
 
 # (Optional sanity check)
 print("cmj_result['date'] dtype:", cmj_result['date'].dtype)
+
+
+m = result['avg_player_load'].dropna()
+meter_lo = max(0, m.min() - 0.05*(m.max()-m.min()))
+meter_hi = m.max() + 0.05*(m.max()-m.min())
+
+pp = cmj_result['avg_peak_power_bm'].dropna()
+pp_lo = pp.min()*0.95
+pp_hi = pp.max()*1.05
 
 # --- Plot for each year ---
 for ax, year in zip(axes, years):
@@ -187,10 +191,10 @@ for ax, year in zip(axes, years):
             ax.axvspan(start, end, color='green', alpha=0.15)
             # optional label
             mid = start + (end - start) / 2
-            ax.text(mid, 550, 'Recess', color='green', ha='center', va='bottom', fontsize=10)
+            ax.text(mid, 650, 'Recess', color='green', ha='center', va='bottom', fontsize=10)
 
     # Set consistent y-axis range
-    ax.set_ylim(0, 600)
+    # ax.set_ylim(50, 700)
 
     # Bottom x-axis: week labels
     ax.set_xticks(labels_year['week_start'])
@@ -239,12 +243,13 @@ for ax, year in zip(axes, years):
         x='date', y='avg_peak_power_bm',
         color='black', s=40, ax=ax_left
     )
+    # ax_left.set_ylim(52, 70)
 
-    # consistent y-range
-    if not cmj_year['avg_peak_power_bm'].isna().all():
-        pp_min = cmj_year['avg_peak_power_bm'].min()
-        pp_max = cmj_year['avg_peak_power_bm'].max()
-        ax_left.set_ylim(pp_min * 0.95, pp_max * 1.05)
+    # RIGHT axis = meterage scale identical across subplots
+    ax.set_ylim(meter_lo, meter_hi)
+
+    # LEFT axis = PP/BM scale identical across subplots
+    ax_left.set_ylim(pp_lo, pp_hi)
 
     # --- Legend handling ---
     # Remove the right legend (from Peak Power / BM axis)
@@ -267,7 +272,7 @@ for ax, year in zip(axes, years):
 plt.tight_layout()
 
 # --- Export ---
-output_path = "avg_player_load_by_year.png"
+output_path = "avg_player_load_by_year_top10.png"
 plt.savefig(output_path, dpi=300, bbox_inches='tight')
 # plt.show()
 

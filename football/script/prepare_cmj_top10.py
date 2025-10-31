@@ -5,7 +5,7 @@ import numpy as np
 
 
 cmj_data = pd.read_csv("../clean_data/wide_cmj.csv")
-catapult_data = pd.read_csv("../clean_data/catapult_data_practice_game_clean.csv")
+catapult_data = pd.read_csv("../clean_data/catapult_data_practice_game_clean_top10.csv")
 
 ANCHOR = pd.Timestamp('2023-06-05')  # Monday
 today = pd.Timestamp('today').normalize()
@@ -111,12 +111,12 @@ active_counts = (
 )
 
 # find which dates have at least 25 True values
-valid_dates = active_counts.loc[active_counts['active_count'] >= 20, 'date']
+valid_dates = active_counts.loc[active_counts['active_count'] >= 0, 'date']
 
 # keep only those dates in your dataframe
 filtered_df = merged[merged['date'].isin(valid_dates)].copy()
 
-output_path = "../clean_data/cmj_wstatus.csv"
+output_path = "../clean_data/cmj_wstatus_top10.csv"
 filtered_df.to_csv(output_path, index=False)
 print(f"Saved merged file to: {output_path}")
 
