@@ -132,7 +132,7 @@ merged_df = combined_df.sort_values("date", ascending=False).reset_index(drop=Tr
 # need to be inside soccer/script folder to run correctly
 raw_catapult_data = pd.read_csv("../raw_data/tblCatapultWSOCStatsByActivity.csv")
 
-game_day_data = pd.read_csv("../raw_data/opponent_ranks.csv")
+game_day_data = pd.read_csv("../raw_data/team_schedule.csv")
 
 # List of columns to keep
 cols_to_keep = ['date', 'athlete_name', 'catapult_athlete_id', 'activity_name','month_name', 'total_duration', 'total_player_load', 'meterage_per_minute']
@@ -189,12 +189,12 @@ combined = combined.sort_values("date", ascending=False).reset_index(drop=True)
 
 # JOIN CATAPULT DATA WITH OPPONENTS RANKS
 # Filter only Soccer rows in your main dataframe
-game_day_data = pd.read_csv("../raw_data/opponent_ranks.csv")
+game_day_data = pd.read_csv("../raw_data/team_schedule.csv")
 game_day_data['Date'] = pd.to_datetime(game_day_data['Date'])               
 
 
 football_df = (
-    game_day_data.loc[game_day_data['Team'] == 'Soccer', ['Date', 'Opponent']]
+    game_day_data.loc[game_day_data['Team'] == 'Soccer', ['Date', 'Opponent','duration']]
     .rename(columns={'Date': 'date'})
 )
 
@@ -313,11 +313,62 @@ grid_week_df.to_csv(output_path, index=False)
 print(f"Saved merged file to: {output_path}")
 
 
-LOAD_THRESH = 35  # cutoff for being an active game contributor
+
+
+minutesplayed_all = pd.read_csv("../clean_data/minutesplayed_clean.csv")
+
+grid_week_df['date'] = pd.to_datetime(grid_week_df['date'], errors='coerce')
+minutesplayed_all['date'] = pd.to_datetime(minutesplayed_all['date'], errors='coerce')
+
+# (optional but recommended) trim names to avoid whitespace mismatches
+grid_week_df['athlete_name'] = grid_week_df['athlete_name'].astype(str).str.strip()
+minutesplayed_all['athlete_name'] = minutesplayed_all['athlete_name'].astype(str).str.strip()
+
+# 2) If minutesplayed_all might have duplicates per (date, athlete), collapse it
+mp_dedup = (
+    minutesplayed_all
+      .groupby(['date', 'athlete_name'], as_index=False)['minutes_played']
+      .max()   # or 'sum' / 'first' depending on how your file is structured
+)
+
+# 3) Merge minutes onto the main df (adds a helper column)
+merged = grid_week_df.merge(
+    mp_dedup, on=['date', 'athlete_name'], how='left', suffixes=('', '_from_minutes')
+)
+
+merged['minutes_played'] = merged['minutes_played'].fillna('')
+
+# 4) Write minutes only for games; leave others untouched (or set to NaN)
+is_game = merged['activity'].astype(str).str.strip().str.lower().eq('game')
+merged['minutes_played'] = np.where(is_game, merged['minutes_played'], '')
+
+# Replace NaN (if any still exist) with blank string
+merged['minutes_played'] = merged['minutes_played'].fillna('')
+
+# Finalize
+grid_week_df = merged
+
+# print(grid_week_df.head(200))
+output_path = "../clean_data/catapult_data_with_minutesplayed.csv"
+grid_week_df.to_csv(output_path, index=False)
+print(f"Saved merged file to: {output_path}")
+
+
+
+
+MINUTES_PLAYED_THRESH = 45  # cutoff for being an active game contributor
 TRAINING_ACTS = ['practice', 'gameday practice']
 
+
+#convert minutes_played to numeric, coerce errors to NaN, then fill NaN with 0
+grid_week_df['minutes_played'] = (
+    pd.to_numeric(grid_week_df['minutes_played'], errors='coerce')
+    .fillna(0)        # blanks or NaN → 0
+    .astype(int)
+)
+
 # 1) Row-level game status: only games count; practices are False
-grid_week_df['game_status'] = (grid_week_df['activity'].eq('game')) & (grid_week_df['meterage_per_minute'] > LOAD_THRESH)
+grid_week_df['game_status'] = (grid_week_df['activity'].eq('game')) & (grid_week_df['minutes_played'] > MINUTES_PLAYED_THRESH)
 
 grid_week_df['weekly_status'] = (
     grid_week_df.groupby(['athlete_name', 'week_of_school_uid'])['game_status']
@@ -348,4 +399,4 @@ df_clean = grid_week_df[
 output_path = "../clean_data/catapult_data_practice_game_clean.csv"
 df_clean.to_csv(output_path, index=False)
 print(f"Saved merged file to: {output_path}")
-print(df_clean.head(200))
+# print(df_clean.head(200))

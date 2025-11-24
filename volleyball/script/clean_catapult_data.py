@@ -6,7 +6,7 @@ import numpy as np
 # need to be inside volleyball/script folder to run correctly
 raw_catapult_data = pd.read_csv("../raw_data/tblCatapultVOLLEYBALLStatsByActivity.csv")
 
-game_day_data = pd.read_csv("../raw_data/opponent_ranks.csv")
+game_day_data = pd.read_csv("../raw_data/team_schedule.csv")
 
 # List of columns to keep
 cols_to_keep = ['date', 'athlete_name', 'catapult_athlete_id', 'activity_name', 'position_name','month_name', 'total_duration', 'total_player_load']
@@ -26,7 +26,7 @@ raw_catapult_data = (
 game_day_data['Date'] = pd.to_datetime(game_day_data['Date'])               
 
 # Filter only Football rows in your main dataframe
-football_df = game_day_data.loc[game_day_data['Team'] == 'Volleyball', ['Date', 'Opponent']].rename(columns={'Date': 'date'})
+football_df = game_day_data.loc[game_day_data['Team'] == 'Volleyball', ['Date', 'Opponent', 'sets']].rename(columns={'Date': 'date'})
 
 # Join on date — inner keeps only matching game days
 merged_df = pd.merge(
@@ -179,7 +179,7 @@ practice_counts = (
 )
 
 # Filter out low-participation days
-valid_practices = practice_counts.loc[practice_counts['num_athletes'] >= 0, 'date']
+valid_practices = practice_counts.loc[practice_counts['num_athletes'] >= 7, 'date']
 # keep only games and valid practices
 df_clean = grid_week_df[
     (grid_week_df['activity'] == 'game') |

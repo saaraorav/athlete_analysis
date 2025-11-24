@@ -111,7 +111,7 @@ active_counts = (
 )
 
 # find which dates have at least 25 True values
-valid_dates = active_counts.loc[active_counts['active_count'] >= 5, 'date']
+valid_dates = active_counts.loc[active_counts['active_count'] >= 0, 'date']
 
 # keep only those dates in your dataframe
 filtered_df = merged[merged['date'].isin(valid_dates)].copy()

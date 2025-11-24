@@ -1,6 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+from matplotlib.lines import Line2D
 # import numpy as np
 
 catapult_data = pd.read_csv("../clean_data/catapult_data_practice_game_clean_top10.csv")
@@ -91,10 +92,16 @@ cmj_result.to_csv(output_path, index=False)
 print(f"Saved merged file to: {output_path}")
 
 # --- Prep data ---
-RECESS_WINDOWS = [
+MIDTERM_WINDOWS = [
     {"year": 2023, "start_date": "2023-10-02", "end_date": "2023-10-23"},
     {"year": 2024, "start_date": "2024-10-07", "end_date": "2024-10-28"},
     {"year": 2025, "start_date": "2025-10-06", "end_date": "2025-10-27"},
+]
+
+RECESS_WINDOWS = [
+    {"year": 2023, "start_date": "2023-10-09", "end_date": "2023-10-10"},
+    {"year": 2024, "start_date": "2024-10-14", "end_date": "2024-10-15"},
+    {"year": 2025, "start_date": "2025-10-13", "end_date": "2025-10-14"},
 ]
 
 result['date'] = pd.to_datetime(result['date'])
@@ -132,6 +139,41 @@ week_labels = (
 # (Optional) make active_player integer
 week_labels['active_player'] = week_labels['active_player'].astype(int)
 
+# 6) Add missing weeks W1-W15 for each school_year
+all_needed_weeks = [f'W{i}' for i in range(1, 16)]  # W1, W2, ..., W15
+missing_rows = []
+
+for year in week_labels['school_year'].unique():
+    year_data = week_labels[week_labels['school_year'] == year]
+    existing_weeks = set(year_data['week_of_school'].values)
+    missing_weeks = [w for w in all_needed_weeks if w not in existing_weeks]
+
+    if missing_weeks:
+        # Get the latest week_start to calculate missing weeks
+        latest_week_start = year_data['week_start'].max()
+        # Get the latest week number from existing data
+        year_data['week_num'] = year_data['week_of_school'].str.extract(r'W(\d+)').astype('Int64')
+        latest_week_num = year_data['week_num'].max()
+
+        for missing_week in missing_weeks:
+            missing_week_num = int(missing_week.replace('W', ''))
+            # Calculate week_start: latest + 7 days per week difference
+            week_diff = missing_week_num - latest_week_num
+            calculated_week_start = latest_week_start + pd.Timedelta(days=7*week_diff)
+
+            missing_rows.append({
+                'school_year': year,
+                'week_of_school_uid': f'{year}-{missing_week}',
+                'week_start': calculated_week_start,
+                'week_of_school': missing_week,
+                'active_player': 0
+            })
+
+if missing_rows:
+    missing_df = pd.DataFrame(missing_rows)
+    week_labels = pd.concat([week_labels, missing_df], ignore_index=True)
+    week_labels = week_labels.sort_values(['school_year', 'week_start']).reset_index(drop=True)
+
 result = result[result['week_of_school'].str.match(r'^W\d+', na=False)]
 week_labels = week_labels[week_labels['week_of_school'].str.match(r'^W\d+', na=False)]
 
@@ -164,10 +206,16 @@ pp = cmj_result['avg_peak_power_bm'].dropna()
 pp_lo = pp.min()*0.95
 pp_hi = pp.max()*1.05
 
+output_path = "../clean_data/week_labels.csv"
+week_labels.to_csv(output_path, index=False)
+print(f"Saved merged file to: {output_path}")
+
 # --- Plot for each year ---
 for ax, year in zip(axes, years):
+    ax.set_title(f'{year}', fontsize=12, pad=10)
     data_year = result[result['school_year'] == year]
     labels_year = week_labels[week_labels['school_year'] == year]
+    print(labels_year)
 
     # Plot lines (connect dots)
     sns.lineplot(
@@ -184,14 +232,23 @@ for ax, year in zip(axes, years):
         hue='activity', palette=palette,
         s=70, ax=ax, legend=True
     )
-    for window in RECESS_WINDOWS:
+    for window in MIDTERM_WINDOWS:
         if window['year'] == year:
             start = pd.to_datetime(window['start_date'])
             end = pd.to_datetime(window['end_date'])
             ax.axvspan(start, end, color='green', alpha=0.15)
             # optional label
             mid = start + (end - start) / 2
-            ax.text(mid, 650, 'Recess', color='green', ha='center', va='bottom', fontsize=10)
+            ax.text(mid, 650, 'Midterms', color='green', ha='center', va='bottom', fontsize=10)
+
+    for window in RECESS_WINDOWS:
+        if window['year'] == year:
+            start = pd.to_datetime(window['start_date'])
+            end = pd.to_datetime(window['end_date'])
+            ax.axvspan(start, end, color='red', alpha=0.15)
+            # optional label
+            mid = start + (end - start) / 2
+            ax.text(mid, 600, 'Recess', color='red', ha='center', va='bottom', fontsize=10)
 
     # Set consistent y-axis range
     # ax.set_ylim(50, 700)
@@ -200,13 +257,17 @@ for ax, year in zip(axes, years):
     ax.set_xticks(labels_year['week_start'])
     ax.set_xticklabels(labels_year['week_of_school'], rotation=45, ha='right')
 
-    # Top x-axis: active player counts
-    ax_top = ax.secondary_xaxis('top')
-    ax_top.set_xticks(labels_year['week_start'])
-    ax_top.set_xticklabels(labels_year['active_player'].astype(int))
-    ax_top.set_xlabel(f'Active Players per Week - {year}', fontsize=11)
+    # # Top x-axis: active player counts
+    # ax_top = ax.secondary_xaxis('top')
+    # ax_top.set_xticks(labels_year['week_start'])
+    # ax_top.set_xticklabels(labels_year['active_player'].astype(int))
+    # ax_top.set_xlabel(f'Active Players per Week - {year}', fontsize=11)
 
     ax.grid(True, linestyle='--', alpha=0.4)
+    # Set x-axis limits with buffer for better visualization
+    buffer = pd.Timedelta(days=2)
+    buffer2 = pd.Timedelta(days=7)
+    ax.set_xlim(labels_year['week_start'].min() - buffer, labels_year['week_start'].max() + buffer2)
 
     # --- LEFT axis = Peak Power / BM (ax_left) ---
     ax_left = ax.twinx()
@@ -243,7 +304,13 @@ for ax, year in zip(axes, years):
         x='date', y='avg_peak_power_bm',
         color='black', s=40, ax=ax_left
     )
-    # ax_left.set_ylim(52, 70)
+    leg_left = ax.get_legend()
+    if leg_left is not None:
+        leg_left.remove()
+        
+    leg_right = ax_left.get_legend()
+    if leg_right is not None:
+        leg_right.remove()
 
     # RIGHT axis = meterage scale identical across subplots
     ax.set_ylim(meter_lo, meter_hi)
@@ -253,21 +320,51 @@ for ax, year in zip(axes, years):
 
     # --- Legend handling ---
     # Remove the right legend (from Peak Power / BM axis)
-    leg_right = ax_left.get_legend()
-    if leg_right is not None:
-        leg_right.remove()
+    # leg_right = ax_left.get_legend()
+    # if leg_right is not None:
+    #     leg_right.remove()
 
-    # Keep the left legend (practice/game) in upper left
-    leg_left = ax.get_legend()
-    if leg_left is not None:
-        leg_left.set_title("Activity")
-        leg_left.set_bbox_to_anchor((0.02, 0.95))  # optional: nudge it slightly
+    # # Keep the left legend (practice/game) in upper left
+    # leg_left = ax.get_legend()
+    # if leg_left is not None:
+    #     leg_left.set_title("Activity")
+    #     leg_left.set_bbox_to_anchor((0.02, 0.95))  # optional: nudge it slightly
 
-    # optional combined legend
-    handles1, labels1 = ax.get_legend_handles_labels()
-    handles2, labels2 = ax_left.get_legend_handles_labels()
-    labels1 = [f"{label} load" for label in labels1]
-    ax.legend(handles1 + handles2, labels1 + labels2, loc='upper left')
+    # # optional combined legend
+    # handles1, labels1 = ax.get_legend_handles_labels()
+    # handles2, labels2 = ax_left.get_legend_handles_labels()
+    # labels1 = [f"{label} load" for label in labels1]
+    # ax.legend(handles1 + handles2, labels1 + labels2, loc='upper left')
+
+# --- Legend handling ---
+# Collect all handles and labels from both axes
+handles1, labels1 = ax.get_legend_handles_labels()
+handles2, labels2 = ax_left.get_legend_handles_labels()
+
+# Customize labels as needed
+labels1 = [f"{label} meterage per minute" for label in labels1]
+
+all_handles = handles1 + handles2
+all_labels = labels1 + labels2
+
+# Create custom legend handles for all three activities
+legend_elements = [
+    Line2D([0], [0], marker='o', color='w', markerfacecolor=palette['practice'], 
+           markersize=8, label='practice load'),
+    Line2D([0], [0], marker='o', color='w', markerfacecolor=palette['game'], 
+           markersize=8, label='game load'),
+    Line2D([0], [0], color='black', linewidth=2, label='Peak Power / BM')
+]
+fig.suptitle('Football Player Loads for Top Contributors', fontsize=16, y=0.99)
+
+# Create a single figure-level legend
+fig.legend(
+    handles=legend_elements,
+    loc='upper center',
+    bbox_to_anchor=(0.15, 1.003),  # Top left corner
+    ncol=1,  # Adjust based on number of items
+    frameon=True
+)
 
 plt.tight_layout()
 
