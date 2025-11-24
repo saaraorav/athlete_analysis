@@ -4,6 +4,7 @@ import seaborn as sns
 import numpy as np
 
 
+
 cmj_data = pd.read_csv("../clean_data/wide_cmj.csv")
 catapult_data = pd.read_csv("../clean_data/catapult_data_practice_game_clean.csv")
 

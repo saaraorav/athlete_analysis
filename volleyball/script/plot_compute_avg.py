@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+from matplotlib.lines import Line2D
 # import numpy as np
 
 catapult_data = pd.read_csv("../clean_data/catapult_data_practice_game_clean.csv")
@@ -37,6 +38,7 @@ event_avgs = (
           .agg(
               avg_player_load=('total_player_load', 'mean'),
               sets=('sets', 'max'),                  # sets are constant per match (3, 4, or 5)
+              num_athletes=('athlete_name', 'nunique'),
               week_of_school=('week_of_school', 'first')
           )
 )
@@ -55,7 +57,7 @@ result = (
     event_avgs
       .merge(active_counts, on='week_of_school_uid', how='left')
       .merge(week_starts, on='week_of_school_uid', how='left')
-      [['date', 'activity', 'avg_player_load', 'avg_player_load_per_set','active_player',
+      [['date', 'activity', 'avg_player_load', 'avg_player_load_per_set','num_athletes','active_player',
         'week_of_school', 'week_of_school_uid', 'week_start']]
       .sort_values('date')
       .reset_index(drop=True)
@@ -78,6 +80,7 @@ cmj_event_avgs = (
       .groupby(['date', 'week_of_school_uid'], as_index=False)
       .agg(
           avg_peak_power_bm=('peak_power_bm', 'mean'),
+          num_athletes=('name', 'nunique'),
           week_of_school=('week_of_school', 'first')  # for display
       )
 )
@@ -91,7 +94,7 @@ cmj_result = (
     cmj_event_avgs
       .merge(active_counts, on='week_of_school_uid', how='left')
       .merge(week_starts, on='week_of_school_uid', how='left')
-      [['date', 'avg_peak_power_bm', 'active_player',
+      [['date', 'avg_peak_power_bm','num_athletes', 'active_player',
         'week_of_school', 'week_of_school_uid', 'week_start']]
       .sort_values('date')
       .reset_index(drop=True)
@@ -235,6 +238,7 @@ week_labels = week_labels[~mask]
 
 # --- Plot for each year ---
 for ax, year in zip(axes, years):
+    ax.set_title(f'{year}', fontsize=12, pad=10)
     data_year = result[result['school_year'] == year].copy()
     # Choose which metric to plot
     data_year['metric_to_plot'] = np.where(
@@ -285,12 +289,6 @@ for ax, year in zip(axes, years):
     ax.set_xticks(labels_year['week_start'])
     ax.set_xticklabels(labels_year['week_of_school'], rotation=45, ha='right')
 
-    # Top x-axis: active player counts
-    ax_top = ax.secondary_xaxis('top')
-    ax_top.set_xticks(labels_year['week_start'])
-    ax_top.set_xticklabels(labels_year['active_player'].astype(int))
-    ax_top.set_xlabel(f'Active Players per Week - {year}', fontsize=11)
-
     # Set x-axis right limit with buffer (left limit auto-scales, starts from T-2 via filtered week_labels)
     buffer = pd.Timedelta(days=7)   # small buffer after last week
     ax.set_xlim(None, labels_year['week_start'].max())
@@ -333,18 +331,6 @@ for ax, year in zip(axes, years):
         color='black', s=40, ax=ax_left
     )
 
-    # RIGHT axis = meterage scale identical across subplots
-    ax.set_ylim(meter_lo, meter_hi)
-
-    # LEFT axis = PP/BM scale identical across subplots
-    ax_left.set_ylim(pp_lo, pp_hi)
-
-    # --- Legend handling ---
-    # Collect all handles and labels from both axes
-    handles1, labels1 = ax.get_legend_handles_labels()
-    handles2, labels2 = ax_left.get_legend_handles_labels()
-
-    # Remove individual legends from both axes
     leg_left = ax.get_legend()
     if leg_left is not None:
         leg_left.remove()
@@ -353,29 +339,175 @@ for ax, year in zip(axes, years):
     if leg_right is not None:
         leg_right.remove()
 
-    # Customize labels as needed
-    labels1[0] = 'avg practice player load'
-    labels1[1] = 'avg game player load per set'
-    labels1[2] = 'avg gameday practice player load'
+    # RIGHT axis = meterage scale identical across subplots
+    ax.set_ylim(meter_lo, meter_hi)
 
-    # Create a single figure-level legend
-    fig.legend(
-        handles1 + handles2, 
-        labels1 + labels2,
-        loc='upper center',
-        bbox_to_anchor=(0.15, 1.07),  # Top left corner
-        ncol=1,  # Stack in 2 columns
-        frameon=True
-    )
+    # LEFT axis = PP/BM scale identical across subplots
+    ax_left.set_ylim(pp_lo, pp_hi)
 
+    # # --- Legend handling ---
+    # # Collect all handles and labels from both axes
+    # handles1, labels1 = ax.get_legend_handles_labels()
+    # handles2, labels2 = ax_left.get_legend_handles_labels()
+
+    # # Remove individual legends from both axes
+    # leg_left = ax.get_legend()
+    # if leg_left is not None:
+    #     leg_left.remove()
+        
+    # leg_right = ax_left.get_legend()
+    # if leg_right is not None:
+    #     leg_right.remove()
+
+    # # Customize labels as needed
+    # labels1[0] = 'avg practice player load'
+    # labels1[1] = 'avg game player load per set'
+    # labels1[2] = 'avg gameday practice player load'
+
+    # # Create a single figure-level legend
+    # fig.legend(
+    #     handles1 + handles2, 
+    #     labels1 + labels2,
+    #     loc='upper center',
+    #     bbox_to_anchor=(0.15, 1.03),  # Top left corner
+    #     ncol=1,  # Stack in 2 columns
+    #     frameon=True
+    # )
+
+# --- Legend handling ---
+# Collect all handles and labels from both axes
+handles1, labels1 = ax.get_legend_handles_labels()
+handles2, labels2 = ax_left.get_legend_handles_labels()
+
+# Customize labels as needed
+labels1 = [f"{label} meterage per minute" for label in labels1]
+
+all_handles = handles1 + handles2
+all_labels = labels1 + labels2
+
+# Create custom legend handles for all three activities
+legend_elements = [
+    Line2D([0], [0], marker='o', color='w', markerfacecolor=palette['practice'], 
+           markersize=8, label='practice load'),
+    Line2D([0], [0], marker='o', color='w', markerfacecolor=palette['game'], 
+           markersize=8, label='game load'),
+    Line2D([0], [0], marker='o', color='w', markerfacecolor=palette['gameday practice'], 
+           markersize=8, label='gameday practice load'),
+    Line2D([0], [0], marker='o', color='w', markerfacecolor='black', markersize=8, label='Peak Power / BM')
+]
+
+fig.suptitle('Volleyball Player Loads for Top Contributors', fontsize=16, y=0.99)
 # Optional: Adjust subplot spacing to make room for legend
 fig.tight_layout(rect=[0, 0, 1, 0.94])  # Leave space at top for legend
 
 plt.tight_layout()
+
+fig.legend(
+    handles=legend_elements,
+    loc='upper center',
+    bbox_to_anchor=(0.15, 1.03),  # Top left corner
+    ncol=1,  # Adjust based on number of items
+    frameon=True
+)
 
 # --- Export ---
 output_path = "avg_player_load_by_year_connected.png"
 plt.savefig(output_path, dpi=300, bbox_inches='tight')
 # plt.show()
 
+print(f"✅ Plot saved to {output_path}")
+
+
+
+
+# -------- BARPLOT OF ATHLETE PARTICIPATION BY ACTIVITY TYPE --------
+fig, axes = plt.subplots(2, 1, figsize=(16, 10), sharex=False)
+fig, axes = plt.subplots(len(years), 1, figsize=(12, 5*len(years)), sharex=False)
+years = [2024, 2025]
+
+# Width of each bar (in days)
+bar_width = pd.Timedelta(days=0.8)  # Slightly less than 1 day for visual separation
+
+for ax, year in zip(axes, years):
+    data_year = result[result['school_year'] == year].copy()
+    labels_year = week_labels[week_labels['school_year'] == year]
+    
+    # Get unique activities for this year
+    activities = data_year['activity'].unique()
+    n_activities = len(activities)
+
+    offsets = {
+        'practice': -1.5 * bar_width,
+        'game': -0.5 * bar_width,
+        'gameday practice': 0.5 * bar_width,
+        'cmj': 1.5 * bar_width  # NOW IT'S DEFINED HERE
+    }
+    
+    # Plot bars for each activity
+    for activity in activities:
+        activity_data = data_year[data_year['activity'] == activity]
+        
+        # Adjust x-position based on activity
+        x_positions = activity_data['date'] + offsets.get(activity, pd.Timedelta(days=0))
+        
+        ax.bar(
+            x_positions,
+            activity_data['num_athletes'],
+            width=bar_width,
+            color=palette[activity],
+            label=f'{activity}',
+            alpha=0.8
+        )
+
+    cmj_year = cmj_result[cmj_result['date'].dt.year == year]
+    # Add Peak Power / BM (CMJ) bars
+    if len(cmj_year) > 0:
+        x_positions_cmj = cmj_year['date'] + offsets['cmj']
+        
+        ax.bar(
+            x_positions_cmj,
+            cmj_year['num_athletes'],
+            width=bar_width,
+            color='black',
+            label='Peak Power / BM',
+            alpha=0.8
+        )
+    
+    # Match x-axis formatting from activity figure
+    ax.set_xticks(labels_year['week_start'])
+    ax.set_xticklabels(labels_year['week_of_school'], rotation=45, ha='right')
+    
+    ax.grid(True, linestyle='--', alpha=0.4, axis='y')
+    ax.set_ylabel('Number of Athletes', fontsize=11)
+    ax.set_xlabel('Week of School', fontsize=11)
+    
+    # Match x-axis limits
+    buffer = pd.Timedelta(days=7)
+    ax.set_xlim(labels_year['week_start'].min() - buffer, 
+                labels_year['week_start'].max() + buffer)
+
+# Create legend
+from matplotlib.lines import Line2D
+legend_elements = [
+    Line2D([0], [0], marker='s', color='w', markerfacecolor=palette['practice'], 
+           markersize=10, label='practice'),
+    Line2D([0], [0], marker='s', color='w', markerfacecolor=palette['game'], 
+           markersize=10, label='game'),
+    Line2D([0], [0], marker='s', color='w', markerfacecolor=palette['gameday practice'], 
+           markersize=10, label='gameday practice'),
+    Line2D([0], [0], marker='s', color='w', markerfacecolor='black', markersize=10, label='Peak Power / BM')  # Added CMJ
+]
+
+fig.legend(
+    handles=legend_elements,
+    loc='upper center',
+    bbox_to_anchor=(0.5, 0.98),
+    ncol=4,
+    frameon=True
+)
+
+fig.tight_layout(rect=[0, 0, 1, 0.96])
+
+output_path = "athlete_participation_by_activity.png"
+plt.savefig(output_path, dpi=300, bbox_inches='tight')
 print(f"✅ Plot saved to {output_path}")
