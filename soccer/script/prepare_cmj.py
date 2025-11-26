@@ -25,7 +25,6 @@ grid_week_df['week_end']   = grid_week_df['week_start'] + pd.Timedelta(days=6)
 
 # ---- School start dates ----
 school_starts = {
-    # 2023: pd.Timestamp('2023-08-21'),
     2024: pd.Timestamp('2024-08-26'),
     2025: pd.Timestamp('2025-08-25'),
 }
@@ -65,58 +64,97 @@ grid_week_df['week_of_school']     = grid_week_df['grid_week'].map(short_label)
 grid_week_df['week_of_school_uid'] = grid_week_df['grid_week'].map(uid_label)
 grid_week_df = grid_week_df.sort_values('date', ascending=False).reset_index(drop=True)
 
-print(grid_week_df.head(200))
+# print(grid_week_df.head(200))
 
-
-status = catapult_data[['athlete_name', 'week_of_school_uid', 'weekly_status']].copy()
-status['weekly_status'] = (
-    status['weekly_status']
-    .astype(str).str.strip().str.lower()
-    .map({'true': True, 'false': False, '1': True, '0': False})
-    .astype('boolean')
-)
-
-# 2) Check for conflicts (shouldn’t exist if data are clean)
-nuniq = (
-    status.groupby(['athlete_name', 'week_of_school_uid'])['weekly_status']
-          .nunique()
-          .reset_index(name='nunique')
-)
-conflicts = nuniq[nuniq['nunique'] > 1]
-if not conflicts.empty:
-    print("!!!!!! Conflicting weekly_status values detected; using True if any True present for those keys.")
-
-# 3) Collapse to one row per (athlete, week). Since values should match, 'max' is fine.
-status_by_week = (
-    status.groupby(['athlete_name', 'week_of_school_uid'], as_index=False)
-          .agg(weekly_status=('weekly_status', 'max'))
-)
-
-# 4) Clean merge (m:1) from grid_week_df onto status
-merged = grid_week_df.merge(
-    status_by_week,
-    left_on=['name', 'week_of_school_uid'],
-    right_on=['athlete_name', 'week_of_school_uid'],
-    how='left',
-    validate='m:1'      # ensures right side is unique per key
-).drop(columns=['athlete_name'])
-
-# count how many times weekly_status == True per unique date
-# remove jump-dates with fewer than 25 active athletes
-active_counts = (
-    merged[merged['weekly_status'] == True]
-      .groupby('date')['weekly_status']
-      .count()
-      .reset_index(name='active_count')
-)
-
-# find which dates have at least 25 True values
-valid_dates = active_counts.loc[active_counts['active_count'] >= 0, 'date']
-
-# keep only those dates in your dataframe
-filtered_df = merged[merged['date'].isin(valid_dates)].copy()
-
-output_path = "../clean_data/cmj_wstatus.csv"
-filtered_df.to_csv(output_path, index=False)
+output_path = "../clean_data/cmj_grid_week.csv"
+grid_week_df.to_csv(output_path, index=False)
 print(f"Saved merged file to: {output_path}")
 
+
+
+top_cont = pd.read_csv("../clean_data/top_contributors.csv")
+top_cont['athlete_name'] = top_cont['athlete_name'].str.strip()
+
+# First, extract year from grid_week_df's date column
+grid_week_df['year'] = pd.to_datetime(grid_week_df['date']).dt.year
+grid_week_df['name'] = grid_week_df['name'].str.strip()
+
+# Merge with top_cont - specify left_on and right_on since column names differ
+grid_week_df = grid_week_df.merge(
+    top_cont[['year', 'athlete_name', 'avg_minutes_played']], 
+    left_on=['year', 'name'],
+    right_on=['year', 'athlete_name'], 
+    how='left'
+)
+
+# Drop the duplicate athlete_name column since you already have 'name'
+grid_week_df = grid_week_df.drop(columns=['athlete_name'])
+
+# Create weekly_status column
+grid_week_df['weekly_status'] = grid_week_df['avg_minutes_played'] >= 45
+
+output_path = "../clean_data/cmj_wstatus.csv"
+grid_week_df.to_csv(output_path, index=False)
+print(f"Saved merged file to: {output_path}")
+
+
+# # Group by year and weekly_status to count athletes
+# status_summary = (
+#     grid_week_df.groupby(['year', 'weekly_status'])['name']
+#     .nunique()
+#     .reset_index()
+#     .rename(columns={'name': 'athlete_count'})
+# )
+
+# print(status_summary)
+
+# # Or if you want to see the actual athlete names:
+# print("\n=== Athletes by Year and Weekly Status ===\n")
+
+# for year in [2024, 2025]:
+#     print(f"\nYear {year}:")
+    
+#     true_athletes = grid_week_df[(grid_week_df['year'] == year) & 
+#                                   (grid_week_df['weekly_status'] == True)]['name'].unique()
+#     print(f"  Weekly Status TRUE ({len(true_athletes)} athletes):")
+#     print(f"    {', '.join(sorted(true_athletes))}")
+    
+#     false_athletes = grid_week_df[(grid_week_df['year'] == year) & 
+#                                    (grid_week_df['weekly_status'] == False)]['name'].unique()
+#     print(f"  Weekly Status FALSE ({len(false_athletes)} athletes):")
+#     print(f"    {', '.join(sorted(false_athletes))}")
+
+
+# # For each year, find athletes who have BOTH True and False weekly_status
+# for year in [2024, 2025]:
+#     year_data = grid_week_df[grid_week_df['year'] == year]
+    
+#     # Get athletes with True status
+#     true_athletes = set(year_data[year_data['weekly_status'] == True]['name'].unique())
+    
+#     # Get athletes with False status
+#     false_athletes = set(year_data[year_data['weekly_status'] == False]['name'].unique())
+    
+#     # Find intersection (athletes with BOTH statuses)
+#     both_status = true_athletes & false_athletes
+    
+#     print(f"\nYear {year}:")
+#     print(f"  Athletes with BOTH True and False weekly_status: {len(both_status)}")
+#     print(f"  Names: {', '.join(sorted(both_status))}")
+
+
+for year in [2024, 2025]:
+    # Get athletes from top_cont with avg_minutes_played >= 45 for this year
+    top_athletes = set(top_cont[(top_cont['year'] == year) & 
+                                    (top_cont['avg_minutes_played'] >= 45)]['athlete_name'].unique())
+
+    # Get athletes from grid_week_df with weekly_status == True for this year
+    grid_true_athletes = set(grid_week_df[(grid_week_df['year'] == year) & 
+                                            (grid_week_df['weekly_status'] == True)]['name'].unique())
+
+    # Find athletes in top_cont but NOT in grid_week_df with True status
+    missing_athletes = top_athletes - grid_true_athletes
+
+    print(f"\nYear {year}:")
+    print(f"  Athletes with avg_minutes >= 45 in top_cont but NOT in weekly_status True: {len(missing_athletes)}")
+    print(f"  Names: {', '.join(sorted(missing_athletes))}")

@@ -15,59 +15,44 @@ catapult_data['date'] = pd.to_datetime(catapult_data['date'])
 # Keep only rows that belong to a labeled school week
 df_weeks = catapult_data.loc[catapult_data['week_of_school_uid'].notna()].copy()
 
-# CHECK THAT only those athletes are used in your computations who have weekly_status == True!!!!!!
-# Count active players per week (weekly_status == True)
-active_counts = (
-    df_weeks.loc[df_weeks['weekly_status']]
-      .groupby('week_of_school_uid')['athlete_name']
-      .nunique()
-      .rename('active_player')
-      .reset_index()
-)
 
-# Per-event (date-level) average using ONLY athletes with weekly_status == True
-#     Keep games and practices separate; no weekly pooling.
-event_avgs = (
-    df_weeks.loc[df_weeks['weekly_status']]
+# Step 1: Filter for athletes with weekly_status == True
+df_filtered = df_weeks[df_weeks['weekly_status'] == True].copy()
+
+# Step 2: Compute active athlete counts per week
+result = (
+    df_filtered.loc[df_weeks['weekly_status']]
       .groupby(['date', 'activity', 'week_of_school_uid'], as_index=False)
       .agg(
-          avg_meterage=('meterage_per_minute', 'mean'),
+          avg_distance=('total_distance', 'mean'),
           avg_total_minutes=('total_duration', 'mean'),
-          avg_real_minutes=('duration', 'mean'),
+          avg_real_minutes=('game_duration', 'mean'),
           num_athletes=('athlete_name', 'nunique'),
           week_of_school=('week_of_school', 'first')  # for display
       )
 )
-
 week_starts = (
-    df_weeks.groupby('week_of_school_uid', as_index=False)
-             .agg(week_start=('week_start', 'first'))
+    catapult_data.groupby('week_of_school_uid', as_index=False)
+    .agg(week_start=('week_start', 'first'))
 )
 
-result = (
-    event_avgs
-      .merge(active_counts, on='week_of_school_uid', how='left')
-      .merge(week_starts, on='week_of_school_uid', how='left')
-      [['date', 'activity', 'avg_total_minutes', 'avg_real_minutes','avg_meterage', 'num_athletes', 'active_player',
-        'week_of_school', 'week_of_school_uid', 'week_start']]
-      .sort_values('date')
-      .reset_index(drop=True)
-)
+# Step 4: Merge week_start into result
+result = result.merge(week_starts, on='week_of_school_uid', how='left')
 
-result['avg_total_minutes'] = result['avg_total_minutes'] / 60
+result['avg_total_minutes'] = result['avg_total_minutes'] / 60.0
 
-result['adjusted_meterage_per_min'] = (
-    result['avg_meterage'] * 
-    result['avg_total_minutes'] / 
-    result['avg_real_minutes']
+result['avg_meters'] = result.apply(
+    lambda row: row['avg_distance'] / row['avg_real_minutes']
+                if row['activity'] == 'game' 
+                else row['avg_distance'] / row['avg_total_minutes'],
+    axis=1
 )
 
 # (optional) round for tidy display
-result['avg_meterage'] = result['avg_meterage'].round(1)
+result['avg_meters'] = result['avg_meters'].round(1)
 result['avg_total_minutes'] = result['avg_total_minutes'].round(1) 
-result['adjusted_meterage_per_min'] = result['adjusted_meterage_per_min'].round(1) 
 
-# print(result.head())
+# # print(result.head())
 output_path = "../clean_data/avgmeterage.csv"
 result.to_csv(output_path, index=False)
 print(f"Saved merged file to: {output_path}")
@@ -76,7 +61,7 @@ print(f"Saved merged file to: {output_path}")
 
 # Per-event (date-level) average using ONLY athletes with weekly_status == True
 # Keep games and practices separate; no weekly pooling.
-cmj_event_avgs = (
+cmj_result = (
     weeks_cmj.loc[weeks_cmj['weekly_status'] & weeks_cmj['peak_power_bm'].notna()]
       .groupby(['date', 'week_of_school_uid'], as_index=False)
       .agg(
@@ -86,22 +71,12 @@ cmj_event_avgs = (
       )
 )
 
-week_starts = (
-    weeks_cmj.groupby('week_of_school_uid', as_index=False)
-            .agg(week_start=('week_start', 'first'))
-)
+# Define the weeks you want to keep
+weeks_to_keep = ['T-2', 'T-1'] + [f'W{i}' for i in range(1, 12)]
 
-cmj_result = (
-    cmj_event_avgs
-      .merge(active_counts, on='week_of_school_uid', how='left')
-      .merge(week_starts, on='week_of_school_uid', how='left')
-      [['date', 'avg_peak_power_bm', 'num_athletes','active_player',
-        'week_of_school', 'week_of_school_uid', 'week_start']]
-      .sort_values('date')
-      .reset_index(drop=True)
-)
+# Filter to keep only those weeks
+cmj_result = cmj_result[cmj_result['week_of_school'].isin(weeks_to_keep)]
 
-print(cmj_result.head())
 output_path = "../clean_data/avgpeakpower.csv"
 cmj_result.to_csv(output_path, index=False)
 print(f"Saved merged file to: {output_path}")
@@ -131,69 +106,6 @@ result = result.sort_values('date')
 # Extract year from UID (e.g. "2024-W7" -> 2024)
 result['school_year'] = result['week_of_school_uid'].str.extract(r'(\d{4})').astype(int)
 
-# Build table for labels per week
-df_weeks['week_start'] = pd.to_datetime(df_weeks['week_start'], errors='coerce')
-
-# 2) If school_year is somehow missing, derive it from UID (fallback)
-if 'school_year' not in df_weeks.columns:
-    df_weeks['school_year'] = df_weeks['week_of_school_uid'].str.extract(r'(\d{4})').astype(int)
-
-# 3) Build the full calendar of academic weeks from df_weeks itself
-all_weeks = (
-    df_weeks[['school_year', 'week_of_school_uid', 'week_start', 'week_of_school']]
-    .drop_duplicates()
-    .sort_values(['school_year', 'week_start'])
-)
-
-# 4) Pull per-week active counts from result (de-dup in case of multiple rows per week)
-active_per_week = (
-    result[['week_of_school_uid', 'active_player']]
-    .drop_duplicates(subset=['week_of_school_uid'])
-)
-
-# 5) Merge to include weeks with no data; fill missing active_player with 0
-week_labels = (
-    all_weeks.merge(active_per_week, on='week_of_school_uid', how='left')
-             .fillna({'active_player': 0})
-)
-
-# (Optional) make active_player integer
-week_labels['active_player'] = week_labels['active_player'].astype(int)
-
-# 6) Add missing weeks W1-W15 for each school_year
-all_needed_weeks = [f'W{i}' for i in range(1, 12)]  # W1, W2, ..., W11
-missing_rows = []
-
-for year in week_labels['school_year'].unique():
-    year_data = week_labels[week_labels['school_year'] == year]
-    existing_weeks = set(year_data['week_of_school'].values)
-    missing_weeks = [w for w in all_needed_weeks if w not in existing_weeks]
-
-    if missing_weeks:
-        # Get the latest week_start to calculate missing weeks
-        latest_week_start = year_data['week_start'].max()
-        # Get the latest week number from existing data
-        year_data['week_num'] = year_data['week_of_school'].str.extract(r'W(\d+)').astype('Int64')
-        latest_week_num = year_data['week_num'].max()
-
-        for missing_week in missing_weeks:
-            missing_week_num = int(missing_week.replace('W', ''))
-            # Calculate week_start: latest + 7 days per week difference
-            week_diff = missing_week_num - latest_week_num
-            calculated_week_start = latest_week_start + pd.Timedelta(days=7*week_diff)
-
-            missing_rows.append({
-                'school_year': year,
-                'week_of_school_uid': f'{year}-{missing_week}',
-                'week_start': calculated_week_start,
-                'week_of_school': missing_week,
-                'active_player': 0
-            })
-
-if missing_rows:
-    missing_df = pd.DataFrame(missing_rows)
-    week_labels = pd.concat([week_labels, missing_df], ignore_index=True)
-    week_labels = week_labels.sort_values(['school_year', 'week_start']).reset_index(drop=True)
 
 # Color palette
 palette = {'practice': 'red', 'game': 'blue', 'gameday practice': 'orange'}
@@ -214,7 +126,7 @@ cmj_result = cmj_result.dropna(subset=['date'])  # drop rows that failed to pars
 # (Optional sanity check)
 print("cmj_result['date'] dtype:", cmj_result['date'].dtype)
 
-m = result[['avg_meterage', 'adjusted_meterage_per_min']].max(axis=1).dropna()
+m = result[['avg_meters']].max(axis=1).dropna()
 meter_lo = max(0, m.min() - 0.05*(m.max()-m.min()))
 meter_hi = m.max() + 0.05*(m.max()-m.min())
 
@@ -222,33 +134,30 @@ pp = cmj_result['avg_peak_power_bm'].dropna()
 pp_lo = pp.min()*0.95
 pp_hi = pp.max()*1.05
 
-mask = week_labels['week_of_school'] == 'T-5'
-week_labels = week_labels[~mask]
-mask = week_labels['week_of_school'] == 'T-4'
-week_labels = week_labels[~mask]
-mask = week_labels['week_of_school'] == 'T-3'
-week_labels = week_labels[~mask]
+mask = result['week_of_school'] == 'T-5'
+result = result[~mask]
+mask = result['week_of_school'] == 'T-4'
+result = result[~mask]
+mask = result['week_of_school'] == 'T-3'
+result = result[~mask]
 
-output_path = "../clean_data/week_labels.csv"
-week_labels.to_csv(output_path, index=False)
-print(f"Saved merged file to: {output_path}")
+
+# output_path = "../clean_data/week_labels.csv"
+# week_labels.to_csv(output_path, index=False)
+# print(f"Saved merged file to: {output_path}")
+
+result['school_year'] = result['week_of_school_uid'].str.extract(r'(\d{4})').astype(int)
 
 # --- Plot for each year ---
 for ax, year in zip(axes, years):
     ax.set_title(f'{year}', fontsize=12, pad=10)
     data_year = result[result['school_year'] == year]
-    labels_year = week_labels[week_labels['school_year'] == year]
-
-    data_year['plot_meterage'] = data_year.apply(
-        lambda row: row['adjusted_meterage_per_min'] if row['activity'] == 'game' 
-                   else row['avg_meterage'],
-        axis=1
-    )
+    labels_year = result[result['school_year'] == year]
 
     # Plot lines (connect dots)
     sns.lineplot(
         data=data_year,
-        x='date', y='plot_meterage',
+        x='date', y='avg_meters',
         hue='activity', palette=palette,
         alpha=0.5, linewidth=1.5, ax=ax, legend=False
     )
@@ -256,7 +165,7 @@ for ax, year in zip(axes, years):
     # Scatter on top (for visible dots)
     sns.scatterplot(
         data=data_year,
-        x='date', y='plot_meterage',
+        x='date', y='avg_meters',
         hue='activity', palette=palette,
         s=70, ax=ax, legend=True
     )
@@ -407,18 +316,19 @@ years = [2024, 2025]
 bar_width = pd.Timedelta(days=0.8)  # Slightly less than 1 day for visual separation
 
 for ax, year in zip(axes, years):
-    data_year = result[result['school_year'] == year].copy()
-    labels_year = week_labels[week_labels['school_year'] == year]
+
+    data_year = result[result['school_year'] == year]
+    labels_year = result[result['school_year'] == year]
     
     # Get unique activities for this year
     activities = data_year['activity'].unique()
     n_activities = len(activities)
 
     offsets = {
-        'practice': -1.5 * bar_width,
-        'game': -0.5 * bar_width,
-        'gameday practice': 0.5 * bar_width,
-        'cmj': 1.5 * bar_width  # NOW IT'S DEFINED HERE
+        'practice': bar_width,
+        'game': bar_width,
+        'gameday practice': -0.25*bar_width,
+        'cmj': 0.25 * bar_width  # NOW IT'S DEFINED HERE
     }
     
     # Plot bars for each activity
@@ -434,7 +344,7 @@ for ax, year in zip(axes, years):
             width=bar_width,
             color=palette[activity],
             label=f'{activity}',
-            alpha=0.8
+            alpha=0.7
         )
 
     cmj_year = cmj_result[cmj_result['date'].dt.year == year]
@@ -448,7 +358,7 @@ for ax, year in zip(axes, years):
             width=bar_width,
             color='black',
             label='Peak Power / BM',
-            alpha=0.8
+            alpha=0.7
         )
     
     # Match x-axis formatting from activity figure

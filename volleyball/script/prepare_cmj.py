@@ -6,7 +6,7 @@ import numpy as np
 
 
 cmj_data = pd.read_csv("../clean_data/wide_cmj.csv")
-catapult_data = pd.read_csv("../clean_data/catapult_data_practice_game_clean.csv")
+catapult_data = pd.read_csv("../clean_data/catapult_data_practice_game_clean_entire_team.csv")
 
 ANCHOR = pd.Timestamp('2023-06-05')  # Monday
 today = pd.Timestamp('today').normalize()
@@ -23,6 +23,10 @@ grid_week_df['grid_week'] = ((grid_week_df['date'] - ANCHOR).dt.days // 7) + 1
 # week_start and week_end for convenience
 grid_week_df['week_start'] = ANCHOR + pd.to_timedelta((grid_week_df['grid_week'] - 1) * 7, unit='D')
 grid_week_df['week_end']   = grid_week_df['week_start'] + pd.Timedelta(days=6)
+
+grid_week_df['date'] = pd.to_datetime(grid_week_df['date'])
+grid_week_df = grid_week_df[grid_week_df['date'] >= '2024-06-01']
+
 
 # ---- School start dates ----
 school_starts = {
@@ -67,6 +71,10 @@ grid_week_df['week_of_school_uid'] = grid_week_df['grid_week'].map(uid_label)
 grid_week_df = grid_week_df.sort_values('date', ascending=False).reset_index(drop=True)
 
 # print(grid_week_df.head(200))
+
+# clean trailing space in athlete names for merge
+# catapult_data['athlete_name'] = catapult_data['athlete_name'].astype(str).str.strip()
+grid_week_df['name'] = grid_week_df['name'].astype(str).str.strip()
 
 
 status = catapult_data[['athlete_name', 'week_of_school_uid', 'weekly_status']].copy()
@@ -117,7 +125,17 @@ valid_dates = active_counts.loc[active_counts['active_count'] >= 5, 'date']
 # keep only those dates in your dataframe
 filtered_df = merged[merged['date'].isin(valid_dates)].copy()
 
-output_path = "../clean_data/cmj_wstatus.csv"
+filtered_df['weekly_status'] = filtered_df['weekly_status'].fillna(False)
+
+output_path = "../clean_data/cmj_wstatus_entire_team.csv"
 filtered_df.to_csv(output_path, index=False)
 print(f"Saved merged file to: {output_path}")
 
+
+# find unique athletes who have weekly_status empty, inlcude dates
+missing_status_athletes = filtered_df[filtered_df['weekly_status'].isna()]['name'].unique()
+# print(missing_status_athletes.head(20))
+print("Athletes with missing weekly_status:")
+for athlete in missing_status_athletes:
+    print(athlete)
+ 

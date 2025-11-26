@@ -12,6 +12,22 @@ game_day_data = pd.read_csv("../raw_data/team_schedule.csv")
 cols_to_keep = ['date', 'athlete_name', 'catapult_athlete_id', 'activity_name', 'position_name','month_name', 'total_duration', 'total_player_load']
 raw_catapult_data['date'] = pd.to_datetime(raw_catapult_data['date'], format='%m/%d/%Y')
 
+# Rename Gaby Mansfield to Gabriela Mansfield in athlete_name column
+raw_catapult_data['athlete_name'] = raw_catapult_data['athlete_name'].replace('Gaby Mansfield', 'Gabriela Mansfield')
+
+raw_catapult_data['year'] = pd.to_datetime(raw_catapult_data['date']).dt.year
+# print unique athletes in df_clean
+# for year in sorted(raw_catapult_data['year'].unique()):
+#     athletes = raw_catapult_data[raw_catapult_data['year'] == year]['athlete_name'].unique()
+#     print(f"\n=== Year {year} ===")
+#     print(f"Total unique athletes: {len(athletes)}")
+#     for athlete in sorted(athletes):
+#         print(f"  {athlete}")
+
+athletes_to_check = ['Cindy Tchouangwa']
+filtered_df = raw_catapult_data[raw_catapult_data['athlete_name'].isin(athletes_to_check)]
+filtered_df.to_csv('../clean_data/specific_athletes.csv', index=False)
+
 # Filter columns, date, and sort
 raw_catapult_data = (
     raw_catapult_data.loc[raw_catapult_data['date'] >= '2024-06-01', cols_to_keep]  # keep only desired columns and filter by date
@@ -19,7 +35,11 @@ raw_catapult_data = (
       .reset_index(drop=True)                      # optional: reset index
 )
 
-# print(raw_catapult_data.head()) 
+# # print all unique athlete names, filter for date just 2024
+# unique_athletes_2024 = raw_catapult_data[raw_catapult_data['date'].dt.year == 2024]['athlete_name'].unique()
+# print("Unique athlete names in 2024:")
+# for athlete in unique_athletes_2024:
+#     print(athlete)
 
 # join catapult data with opponents rank
 # game_day_data['Date'] = pd.to_datetime(game_day_data['Date'], format='%m/%d/%Y')
@@ -59,38 +79,6 @@ mask_invalid_game = (
 
 # Update those rows to 'practice' while keeping everything else unchanged
 merged_df.loc[mask_invalid_game, 'activity'] = 'gameday practice'
-
-# Optional: check how many changes were made
-print(f"Changed {mask_invalid_game.sum()} mislabeled 'game' rows to 'practice'.")
-# print(merged_df.head(200)) 
-
-# OPTIONAL: Rename athletes for 2023 data
-# mask_2023 = merged_df['date'].dt.year == 2023
-
-# player_to_name = {
-#     "Player Eight": "Lademi Ogunlana",
-#     "Player Eleven": "Darby Harris",
-#     "Player Fifteen": "Thea Carter",
-#     "Player Five": "Nia McCardell",
-#     "Player Four": "Kaitlyn Knobbe",
-#     "Player Fourteen": "Danyle Courtley",
-#     "Player Nine": "Taylor Johnson",
-#     "Player One": "Grace Chapman",
-#     "Player Seven": "Emilia Weske",
-#     "Player Six": "Campbell Love",
-#     "Player Thirteen": "Stephanie Gutierrez",
-#     "Player Three": "Izzy Rawlings",
-#     "Player Twelve": "Satasha Kostelecky",
-#     "Player Two": "Gaby Mansfield",
-#     "Player Ten": "NaN"
-# }
-
-# # Apply renaming only for 2023 rows
-# merged_df.loc[mask_2023, 'athlete_name'] = (
-#     merged_df.loc[mask_2023, 'athlete_name']
-#     .map(player_to_name)
-#     .fillna(merged_df.loc[mask_2023, 'athlete_name'])
-# )
 
 # remove duplicates: keep first occurrence (newest date) per athlete/activity/date
 merged_df = merged_df.drop_duplicates(subset=['date', 'athlete_name', 'activity_name'], keep='first')
@@ -148,13 +136,13 @@ grid_week_df = grid_week_df.copy()
 grid_week_df['week_of_school']      = grid_week_df['grid_week'].map(short_label)
 grid_week_df['week_of_school_uid']  = grid_week_df['grid_week'].map(uid_label)
 
-print(grid_week_df.head(200)) 
+# print(grid_week_df.head(200)) 
 
 output_path = "../clean_data/catapult_data_for_dist.csv"
 grid_week_df.to_csv(output_path, index=False)
 print(f"Saved merged file to: {output_path}")
 
-LOAD_THRESH = 130  # cutoff for being an active game contributor
+LOAD_THRESH = 0 # cutoff for being an active game contributor
 TRAINING_ACTS = ['practice', 'gameday practice']
 
 # 1) Row-level game status: only games count; practices are False
@@ -186,7 +174,40 @@ df_clean = grid_week_df[
     (grid_week_df['activity'].isin(TRAINING_ACTS) & grid_week_df['date'].isin(valid_practices))
 ]
 
-output_path = "../clean_data/catapult_data_practice_game_clean.csv"
+output_path = "../clean_data/catapult_data_practice_game_clean_entire_team.csv"
 df_clean.to_csv(output_path, index=False)
 print(f"Saved merged file to: {output_path}")
 # print(df_clean.head(200))
+
+
+df_clean['year'] = pd.to_datetime(df_clean['date']).dt.year
+
+for year in sorted(df_clean['year'].unique()):
+    athletes = df_clean[df_clean['year'] == year]['athlete_name'].unique()
+    print(f"\n=== Year {year} ===")
+    print(f"Total unique athletes: {len(athletes)}")
+    for athlete in sorted(athletes):
+        print(f"  {athlete}")
+
+
+# Get all unique athletes with weekly_status == True
+true_status_athletes = grid_week_df[grid_week_df['weekly_status'] == True]['athlete_name'].unique()
+
+# print(f"Total unique athletes with weekly_status == True: {len(true_status_athletes)}")
+# print("\nAthletes:")
+# for athlete in sorted(true_status_athletes):
+#     print(f"  {athlete}")
+
+
+# All Cindy's games
+all_cindy_games = grid_week_df[
+    (grid_week_df['athlete_name'] == 'Cindy Tchouangwa') & 
+    (grid_week_df['activity'] == 'game')
+]
+
+print(f"Total games: {len(all_cindy_games)}")
+print(f"Games with weekly_status == True: {(all_cindy_games['weekly_status'] == True).sum()}")
+print(f"Games with weekly_status == False: {(all_cindy_games['weekly_status'] == False).sum()}")
+
+print("\nAll games by week:")
+print(all_cindy_games[['date', 'week_of_school', 'total_player_load', 'game_status', 'weekly_status']].sort_values('date'))

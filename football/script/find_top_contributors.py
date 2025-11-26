@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 # import numpy as np
 
-catapult_data = pd.read_csv("../clean_data/catapult_data_practice_game_clean.csv")
+catapult_data = pd.read_csv("../clean_data/catapult_data_for_cont.csv")
 
 # --- Make sure date column is datetime ---
 catapult_data["date"] = pd.to_datetime(catapult_data["date"], errors="coerce")
@@ -15,6 +15,8 @@ catapult_data["year"] = catapult_data["date"].dt.year
 games = catapult_data[catapult_data["activity"].str.lower() == "game"].copy()
 
 # --- Compute per-athlete yearly totals ---
+#total_load_sum is the sum of the player load across all games that athlete participated in during that year.
+# Game count is the number of games played by the athlete in that year
 yearly_load = (
     games.groupby(["year", "athlete_name"], as_index=False)
          .agg(total_load_sum=("total_player_load", "sum"),
@@ -22,6 +24,8 @@ yearly_load = (
 )
 
 # --- Compute average load per game ---
+# Game count is the number of games played by the athlete in that year
+# This gives you the average player load per game for each athlete in each year
 yearly_load["avg_load_per_game"] = yearly_load["total_load_sum"] / yearly_load["game_count"]
 
 # --- Get top 10 athletes per year ---

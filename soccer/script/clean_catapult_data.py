@@ -36,6 +36,7 @@ EXPECTED_COLUMNS = [
     "Distance Per Min (yd/min)",
     "Player Load Per Min",
     "Player Load",
+    "Distance (miles)"
 ]
 
 RENAMED_COLUMNS = {
@@ -48,6 +49,7 @@ RENAMED_COLUMNS = {
     "Split Name": "split_name",
     "Tags": "tags",
     "Player Load Per Min": "player_load_per_min",
+    "Distance (miles)": "distance_miles",
 }
 
 
@@ -59,6 +61,10 @@ combined_playerteck = combined_playerteck.rename(columns=RENAMED_COLUMNS)
 # convert Distance from yards/min to meters/min ---
 if "meterage_per_minute" in combined_playerteck.columns:
     combined_playerteck["meterage_per_minute"] = combined_playerteck["meterage_per_minute"] * 0.9144 # yards to meters
+
+if "distance_miles" in combined_playerteck.columns:
+    combined_playerteck["total_distance"] = combined_playerteck["distance_miles"] * 1609.34  # miles to meters
+    combined_playerteck = combined_playerteck.drop(columns=["distance_miles"])
 
 # print(combined_df.head(200))
 # output_path = "../clean_data/playerteck_raw.csv"
@@ -124,9 +130,9 @@ combined_df["date"] = pd.to_datetime(combined_df["date"], errors="coerce")
 # Sort descending by date (most recent → oldest)
 merged_df = combined_df.sort_values("date", ascending=False).reset_index(drop=True)
 
-# output_path = "../clean_data/playerteck_raw.csv"
-# combined_playerteck.to_csv(output_path, index=False)
-# print(f"Saved merged file to: {output_path}")
+output_path = "../clean_data/playerteck_raw.csv"
+combined_playerteck.to_csv(output_path, index=False)
+print(f"Saved merged file to: {output_path}")
 
 # COMBINE PLAYERTECK AND CATAPULT DATA
 # need to be inside soccer/script folder to run correctly
@@ -135,8 +141,11 @@ raw_catapult_data = pd.read_csv("../raw_data/tblCatapultWSOCStatsByActivity.csv"
 game_day_data = pd.read_csv("../raw_data/team_schedule.csv")
 
 # List of columns to keep
-cols_to_keep = ['date', 'athlete_name', 'catapult_athlete_id', 'activity_name','month_name', 'total_duration', 'total_player_load', 'meterage_per_minute']
+cols_to_keep = ['date', 'athlete_name', 'catapult_athlete_id', 'activity_name','month_name', 'total_duration', 'total_player_load', 'meterage_per_minute', 'total_distance']
 raw_catapult_data['date'] = pd.to_datetime(raw_catapult_data['date'], format='%m/%d/%Y')
+
+if "total_distance" in raw_catapult_data.columns:
+    raw_catapult_data["total_distance"] = raw_catapult_data["total_distance"] * 1000 # km to meters
 
 # Filter columns, date, and sort
 raw_catapult_data = (
@@ -173,6 +182,7 @@ expected_cols = [
     "total_player_load",
     "meterage_per_minute",
     "player_load_per_min",
+    'total_distance',
 ]
 
 for col in expected_cols:
@@ -185,8 +195,6 @@ combined["date"] = pd.to_datetime(combined["date"], errors="coerce")
 combined = combined.sort_values("date", ascending=False).reset_index(drop=True)
 
 
-
-
 # JOIN CATAPULT DATA WITH OPPONENTS RANKS
 # Filter only Soccer rows in your main dataframe
 game_day_data = pd.read_csv("../raw_data/team_schedule.csv")
@@ -194,7 +202,7 @@ game_day_data['Date'] = pd.to_datetime(game_day_data['Date'])
 
 
 football_df = (
-    game_day_data.loc[game_day_data['Team'] == 'Soccer', ['Date', 'Opponent','duration']]
+    game_day_data.loc[game_day_data['Team'] == 'Soccer', ['Date', 'Opponent','game_duration']]
     .rename(columns={'Date': 'date'})
 )
 
@@ -311,74 +319,33 @@ grid_week_df["date"] = pd.to_datetime(grid_week_df["date"], errors="coerce")
 output_path = "../clean_data/catapult_data_for_dist.csv"
 grid_week_df.to_csv(output_path, index=False)
 print(f"Saved merged file to: {output_path}")
+grid_week_df['athlete_name'] = grid_week_df['athlete_name'].replace('Kallie Mckinney', 'Kallie McKinney')
 
 
 
 
-minutesplayed_all = pd.read_csv("../clean_data/minutesplayed_clean.csv")
+top_cont = pd.read_csv("../clean_data/top_contributors.csv")
 
-grid_week_df['date'] = pd.to_datetime(grid_week_df['date'], errors='coerce')
-minutesplayed_all['date'] = pd.to_datetime(minutesplayed_all['date'], errors='coerce')
+top_cont['athlete_name'] = top_cont['athlete_name'].str.strip()
 
-# (optional but recommended) trim names to avoid whitespace mismatches
-grid_week_df['athlete_name'] = grid_week_df['athlete_name'].astype(str).str.strip()
-minutesplayed_all['athlete_name'] = minutesplayed_all['athlete_name'].astype(str).str.strip()
+# First, extract year from grid_week_df's date column
+grid_week_df['year'] = pd.to_datetime(grid_week_df['date']).dt.year
+grid_week_df['athlete_name'] = grid_week_df['athlete_name'].str.strip()
 
-# 2) If minutesplayed_all might have duplicates per (date, athlete), collapse it
-mp_dedup = (
-    minutesplayed_all
-      .groupby(['date', 'athlete_name'], as_index=False)['minutes_played']
-      .max()   # or 'sum' / 'first' depending on how your file is structured
+# Merge with top_cont to get avg_minutes_played
+grid_week_df = grid_week_df.merge(
+    top_cont[['year', 'athlete_name', 'avg_minutes_played']], 
+    on=['year', 'athlete_name'], 
+    how='left'
 )
 
-# 3) Merge minutes onto the main df (adds a helper column)
-merged = grid_week_df.merge(
-    mp_dedup, on=['date', 'athlete_name'], how='left', suffixes=('', '_from_minutes')
-)
-
-merged['minutes_played'] = merged['minutes_played'].fillna('')
-
-# 4) Write minutes only for games; leave others untouched (or set to NaN)
-is_game = merged['activity'].astype(str).str.strip().str.lower().eq('game')
-merged['minutes_played'] = np.where(is_game, merged['minutes_played'], '')
-
-# Replace NaN (if any still exist) with blank string
-merged['minutes_played'] = merged['minutes_played'].fillna('')
-
-# Finalize
-grid_week_df = merged
-
-# print(grid_week_df.head(200))
-output_path = "../clean_data/catapult_data_with_minutesplayed.csv"
-grid_week_df.to_csv(output_path, index=False)
-print(f"Saved merged file to: {output_path}")
+# Create weekly_status column
+grid_week_df['weekly_status'] = grid_week_df['avg_minutes_played'] >= 45
+grid_week_df['athlete_name'] = grid_week_df['athlete_name'].str.strip()
 
 
-
-
-MINUTES_PLAYED_THRESH = 45  # cutoff for being an active game contributor
+# MINUTES_PLAYED_THRESH = 45  # cutoff for being an active game contributor
 TRAINING_ACTS = ['practice', 'gameday practice']
-
-
-#convert minutes_played to numeric, coerce errors to NaN, then fill NaN with 0
-grid_week_df['minutes_played'] = (
-    pd.to_numeric(grid_week_df['minutes_played'], errors='coerce')
-    .fillna(0)        # blanks or NaN → 0
-    .astype(int)
-)
-
-# 1) Row-level game status: only games count; practices are False
-grid_week_df['game_status'] = (grid_week_df['activity'].eq('game')) & (grid_week_df['minutes_played'] > MINUTES_PLAYED_THRESH)
-
-grid_week_df['weekly_status'] = (
-    grid_week_df.groupby(['athlete_name', 'week_of_school_uid'])['game_status']
-      .transform('any')
-).fillna(False)
-
-# print(grid_week_df.head(200)) 
-# output_path = "../clean_data/catapult_data_wstatus.csv"
-# grid_week_df.to_csv(output_path, index=False)
-# print(f"Saved merged file to: {output_path}")
 
 # remove practice rows with low athlete participation
 practice_counts = (
@@ -400,3 +367,25 @@ output_path = "../clean_data/catapult_data_practice_game_clean.csv"
 df_clean.to_csv(output_path, index=False)
 print(f"Saved merged file to: {output_path}")
 # print(df_clean.head(200))
+
+# print unique athletes in df_clean
+un = df_clean['athlete_name'].unique()
+print("Unique athletes in cleaned catapult data:")
+for athlete in un:
+    print(athlete)
+
+for year in [2024, 2025]:
+    # Get athletes from top_cont with avg_minutes_played >= 45 for this year
+    top_athletes = set(top_cont[(top_cont['year'] == year) & 
+                                    (top_cont['avg_minutes_played'] >= 45)]['athlete_name'].unique())
+
+    # Get athletes from grid_week_df with weekly_status == True for this year
+    grid_true_athletes = set(df_clean[(df_clean['year'] == year) & 
+                                            (df_clean['weekly_status'] == True)]['athlete_name'].unique())
+
+    # Find athletes in top_cont but NOT in grid_week_df with True status
+    missing_athletes = top_athletes - grid_true_athletes
+
+    print(f"\nYear {year}:")
+    print(f"  Athletes with avg_minutes >= 45 in top_cont but NOT in weekly_status True: {len(missing_athletes)}")
+    print(f"  Names: {', '.join(sorted(missing_athletes))}")

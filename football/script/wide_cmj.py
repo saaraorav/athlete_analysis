@@ -4,7 +4,7 @@ import seaborn as sns
 import numpy as np
 
 
-raw_cmj_data = pd.read_csv("../raw_data/MASTER_all_CMJmetrics.csv")
+raw_cmj_data = pd.read_csv("../raw_data/MASTER_desired_CMJmetrics.csv")
 # raw_cmj_data = raw_cmj_data.sort_values('recordedUTC', ascending=False)
 # print(raw_cmj_data['recordedUTC'].tail(5))
 # ensure it's a datetime

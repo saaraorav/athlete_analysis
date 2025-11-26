@@ -46,6 +46,11 @@ merged_df = merged_df.loc[
 # remove duplicates: keep first occurrence (newest date) per athlete/activity/date
 merged_df = merged_df.drop_duplicates(subset=['date', 'athlete_name', 'activity_name'], keep='first')
 
+output_path = "../clean_data/catapult_data_for_cont.csv"
+merged_df.to_csv(output_path, index=False)
+print(f"Saved merged file to: {output_path}")
+
+
 
 ANCHOR = pd.Timestamp('2023-06-05')  # Monday
 today = pd.Timestamp('today').normalize()
@@ -102,42 +107,12 @@ grid_week_df['week_of_school_uid']  = grid_week_df['grid_week'].map(uid_label)
 
 # print(grid_week_df.head(200)) 
 
-output_path = "../clean_data/catapult_data_for_dist.csv"
-grid_week_df.to_csv(output_path, index=False)
-print(f"Saved merged file to: {output_path}")
-
-
-LOAD_THRESH = 100  # cutoff for being an active game contributor
-
-# 1) Row-level game status: only games count; practices are False
-# grid_week_df['game_status'] = (grid_week_df['activity'].eq('game')) & (grid_week_df['total_player_load'] > LOAD_THRESH)
-
-# grid_week_df['weekly_status'] = (
-#     grid_week_df.groupby(['athlete_name', 'week_of_school_uid'])['game_status']
-#       .transform('any')
-# ).fillna(False)
-
-# # print(grid_week_df.head(200)) 
-# output_path = "../clean_data/catapult_data_wstatus.csv"
+# output_path = "../clean_data/catapult_data_for_dist.csv"
 # grid_week_df.to_csv(output_path, index=False)
 # print(f"Saved merged file to: {output_path}")
 
 
-# # remove practice rows with low athlete participation
-# practice_counts = (
-#     grid_week_df.loc[grid_week_df['activity'] == 'practice']
-#       .groupby('date')['catapult_athlete_id'].nunique()
-#       .rename('num_athletes')
-#       .reset_index()
-# )
-
-# # Filter out low-participation days
-# valid_practices = practice_counts.loc[practice_counts['num_athletes'] >= 35, 'date']
-# # keep only games and valid practices
-# df_clean = grid_week_df[
-#     (grid_week_df['activity'] == 'game') |
-#     ((grid_week_df['activity'] == 'practice') & (grid_week_df['date'].isin(valid_practices)))
-# ]
+LOAD_THRESH = 100  # cutoff for being an active game contributor
 
 grid_week_df = grid_week_df.copy()
 grid_week_df["date"] = pd.to_datetime(grid_week_df["date"], errors="coerce")
@@ -156,12 +131,64 @@ top10_pairs = (
 )
 top10_pairs = set(top10_pairs.tolist())
 
-grid_week_df["weekly_status"] = pd.Series(
-    list(zip(grid_week_df["year"], grid_week_df[grid_name_col]))
-).isin(top10_pairs)
+# Create a column of tuples, then check membership
+grid_week_df["year_athlete_pair"] = list(zip(grid_week_df["year"], grid_week_df[grid_name_col]))
+grid_week_df["weekly_status"] = grid_week_df["year_athlete_pair"].isin(top10_pairs)
+grid_week_df = grid_week_df.drop(columns=["year_athlete_pair"])  # clean up
 
 # print(df_clean.head(200)) 
 
 output_path = "../clean_data/catapult_data_practice_game_clean_top10.csv"
 grid_week_df.to_csv(output_path, index=False)
 print(f"Saved merged file to: {output_path}")
+
+# For each year, check if top 10 athletes have weekly_status == True
+for year in [2023, 2024, 2025]:
+    # Get top 10 athletes for this year
+    top10_athletes = top10_per_year[top10_per_year['year'] == year]['athlete_name'].unique()
+    
+    print(f"\n=== Year {year} ===")
+    print(f"Top 10 athletes: {len(top10_athletes)}")
+    
+    for athlete in top10_athletes:
+        # Check their weekly_status in grid_week_df for this year
+        athlete_data = grid_week_df[(grid_week_df['year'] == year) & 
+                                     (grid_week_df['athlete_name'] == athlete)]
+        
+        if len(athlete_data) == 0:
+            print(f"  {athlete}: NOT FOUND in grid_week_df")
+        else:
+            has_true = (athlete_data['weekly_status'] == True).any()
+            has_false = (athlete_data['weekly_status'] == False).any()
+            
+            if has_true and has_false:
+                status = "BOTH True and False"
+            elif has_true:
+                status = "TRUE only"
+            elif has_false:
+                status = "FALSE only"
+            else:
+                status = "No status data"
+            
+            print(f"  {athlete}: {status}")
+
+
+# For each year, find athletes with weekly_status == True who are NOT in top 10
+for year in [2023, 2024, 2025]:
+    # Get top 10 athletes for this year
+    top10_athletes = set(top10_per_year[top10_per_year['year'] == year]['athlete_name'].unique())
+    
+    # Get athletes with weekly_status == True in grid_week_df for this year
+    true_status_athletes = set(grid_week_df[(grid_week_df['year'] == year) & 
+                                             (grid_week_df['weekly_status'] == True)]['athlete_name'].unique())
+    
+    # Find athletes with True status who are NOT in top 10
+    not_in_top10 = true_status_athletes - top10_athletes
+    
+    print(f"\n=== Year {year} ===")
+    print(f"Top 10 athletes: {len(top10_athletes)}")
+    print(f"Athletes with weekly_status == True: {len(true_status_athletes)}")
+    print(f"Athletes with True status NOT in top 10: {len(not_in_top10)}")
+    
+    if not_in_top10:
+        print(f"Names: {', '.join(sorted(not_in_top10))}")

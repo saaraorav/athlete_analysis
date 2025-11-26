@@ -5,7 +5,7 @@ import seaborn as sns
 from matplotlib.lines import Line2D
 # import numpy as np
 
-catapult_data = pd.read_csv("../clean_data/catapult_data_practice_game_clean.csv")
+catapult_data = pd.read_csv("../clean_data/catapult_data_practice_game_clean_entire_team.csv")
 cmj_data = pd.read_csv("../clean_data/cmj_wstatus.csv")
 
 weeks_cmj = cmj_data.loc[cmj_data['week_of_school_uid'].notna()].copy()
@@ -345,35 +345,6 @@ for ax, year in zip(axes, years):
     # LEFT axis = PP/BM scale identical across subplots
     ax_left.set_ylim(pp_lo, pp_hi)
 
-    # # --- Legend handling ---
-    # # Collect all handles and labels from both axes
-    # handles1, labels1 = ax.get_legend_handles_labels()
-    # handles2, labels2 = ax_left.get_legend_handles_labels()
-
-    # # Remove individual legends from both axes
-    # leg_left = ax.get_legend()
-    # if leg_left is not None:
-    #     leg_left.remove()
-        
-    # leg_right = ax_left.get_legend()
-    # if leg_right is not None:
-    #     leg_right.remove()
-
-    # # Customize labels as needed
-    # labels1[0] = 'avg practice player load'
-    # labels1[1] = 'avg game player load per set'
-    # labels1[2] = 'avg gameday practice player load'
-
-    # # Create a single figure-level legend
-    # fig.legend(
-    #     handles1 + handles2, 
-    #     labels1 + labels2,
-    #     loc='upper center',
-    #     bbox_to_anchor=(0.15, 1.03),  # Top left corner
-    #     ncol=1,  # Stack in 2 columns
-    #     frameon=True
-    # )
-
 # --- Legend handling ---
 # Collect all handles and labels from both axes
 handles1, labels1 = ax.get_legend_handles_labels()
@@ -411,7 +382,7 @@ fig.legend(
 )
 
 # --- Export ---
-output_path = "avg_player_load_by_year_connected.png"
+output_path = "avg_player_load_by_year_connected_entire_team.png"
 plt.savefig(output_path, dpi=300, bbox_inches='tight')
 # plt.show()
 
@@ -508,6 +479,6 @@ fig.legend(
 
 fig.tight_layout(rect=[0, 0, 1, 0.96])
 
-output_path = "athlete_participation_by_activity.png"
+output_path = "athlete_participation_by_activity_entire_team.png"
 plt.savefig(output_path, dpi=300, bbox_inches='tight')
 print(f"✅ Plot saved to {output_path}")

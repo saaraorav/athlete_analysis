@@ -24,8 +24,8 @@ active_counts = (
       .reset_index()
 )
 
-# Per-event (date-level) average using ONLY athletes with weekly_status == True
-#     Keep games and practices separate; no weekly pooling.
+# For a game on a specific date: It's the average player load across all athletes who played in that game (with weekly_status == True)
+# For a practice on a specific date: It's the average player load across all athletes who participated in that practice (with weekly_status == True)
 event_avgs = (
     df_weeks.loc[df_weeks['weekly_status']]
       .groupby(['date', 'activity', 'week_of_school_uid'], as_index=False)
@@ -378,9 +378,9 @@ for ax, year in zip(axes, years):
     n_activities = len(activities)
 
     offsets = {
-        'practice': -1.5 * bar_width,
-        'game': -0.5 * bar_width,
-        'cmj': 0.5 * bar_width  # NOW IT'S DEFINED HERE
+        'practice': -0.25 * bar_width,
+        'game': bar_width,
+        'cmj': 0.25 * bar_width  # NOW IT'S DEFINED HERE
     }
     
     # Plot bars for each activity

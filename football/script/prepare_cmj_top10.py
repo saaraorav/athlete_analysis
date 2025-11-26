@@ -6,6 +6,9 @@ import numpy as np
 
 cmj_data = pd.read_csv("../clean_data/wide_cmj.csv")
 catapult_data = pd.read_csv("../clean_data/catapult_data_practice_game_clean_top10.csv")
+top10_per_year = pd.read_csv("../clean_data/top_contributors.csv")
+
+cmj_data['name'] = cmj_data['name'].replace('Kobie Campbell', 'Kobie Cambpell')
 
 ANCHOR = pd.Timestamp('2023-06-05')  # Monday
 today = pd.Timestamp('today').normalize()
@@ -119,4 +122,70 @@ filtered_df = merged[merged['date'].isin(valid_dates)].copy()
 output_path = "../clean_data/cmj_wstatus_top10.csv"
 filtered_df.to_csv(output_path, index=False)
 print(f"Saved merged file to: {output_path}")
+
+filtered_df['year'] = pd.to_datetime(filtered_df['date']).dt.year
+
+
+# kobie_data = filtered_df[filtered_df['name'] == 'Tony Anyanwu']
+# print(kobie_data.head(10))
+
+
+# # print unique athletes in df_clean
+# for year in sorted(filtered_df['year'].unique()):
+#     athletes = filtered_df[filtered_df['year'] == year]['name'].unique()
+#     print(f"\n=== Year {year} ===")
+#     print(f"Total unique athletes: {len(athletes)}")
+#     for athlete in sorted(athletes):
+#         print(f"  {athlete}")
+
+# For each year, check if top 10 athletes have weekly_status == True
+for year in [2023, 2024, 2025]:
+    # Get top 10 athletes for this year
+    top10_athletes = top10_per_year[top10_per_year['year'] == year]['athlete_name'].unique()
+    
+    print(f"\n=== Year {year} ===")
+    print(f"Top 10 athletes: {len(top10_athletes)}")
+    
+    for athlete in top10_athletes:
+        # Check their weekly_status in filtered_df for this year
+        athlete_data = filtered_df[(filtered_df['year'] == year) & 
+                                     (filtered_df['name'] == athlete)]
+        
+        if len(athlete_data) == 0:
+            print(f"  {athlete}: NOT FOUND in filtered_df")
+        else:
+            has_true = (athlete_data['weekly_status'] == True).any()
+            has_false = (athlete_data['weekly_status'] == False).any()
+            
+            if has_true and has_false:
+                status = "BOTH True and False"
+            elif has_true:
+                status = "TRUE only"
+            elif has_false:
+                status = "FALSE only"
+            else:
+                status = "No status data"
+            
+            print(f"  {athlete}: {status}")
+
+
+# For each year, find athletes with weekly_status == True who are NOT in top 10
+for year in [2023, 2024, 2025]:
+    # Get top 10 athletes for this year
+    top10_athletes = set(top10_per_year[top10_per_year['year'] == year]['athlete_name'].unique())
+    
+    # Get athletes with weekly_status == True in grid_week_df for this year
+    true_status_athletes = set(filtered_df[(filtered_df['year'] == year) & 
+                                             (filtered_df['weekly_status'] == True)]['name'].unique())
+    
+    # Find athletes with True status who are NOT in top 10
+    not_in_top10 = true_status_athletes - top10_athletes
+    
+    print(f"\n=== Year {year} ===")
+    print(f"Top 10 athletes: {len(top10_athletes)}")
+    print(f"Athletes with weekly_status == True: {len(true_status_athletes)}")
+    print(f"Athletes with True status NOT in top 10: {len(not_in_top10)}")
+    
+    if not_in_top10:
+        print(f"Names: {', '.join(sorted(not_in_top10))}")
 

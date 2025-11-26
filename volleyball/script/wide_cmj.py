@@ -4,7 +4,7 @@ import seaborn as sns
 import numpy as np
 
 
-raw_cmj_data = pd.read_csv("../raw_data/MASTER_all_CMJmetrics.csv")
+raw_cmj_data = pd.read_csv("../raw_data/MASTER_raw_CMJmetrics.csv")
 # ensure it's a datetime
 raw_cmj_data['recordedUTC'] = pd.to_datetime(raw_cmj_data['recordedUTC'], utc=True, errors='coerce')
 
@@ -60,3 +60,10 @@ wide.to_csv(output_path, index=False)
 print(f"Saved merged file to: {output_path}")
 
 # print(wide.head(10))
+
+
+#find all jumps made on 2025-10-17
+# jumps_on_date = wide[wide['date'] == pd.Timestamp('2025-10-17')]
+# print(jumps_on_date.head(15))
+# output_path = "../clean_data/jumps_ondate.csv"
+# jumps_on_date.to_csv(output_path, index=False)
